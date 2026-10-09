@@ -2,10 +2,15 @@ package app
 
 import (
 	"net/http"
+
+	"github.com/sbrsn97/kisalt/internal/links"
 )
 
 func New() *http.ServeMux {
 	mux := http.NewServeMux()
+
+	linkService := links.NewService()
+	linkHandler := links.NewHandler(linkService)
 
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -14,6 +19,8 @@ func New() *http.ServeMux {
 			return
 		}
 	})
+
+	mux.HandleFunc("POST /links", linkHandler.Create)
 
 	return mux
 }
