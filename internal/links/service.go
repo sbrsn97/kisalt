@@ -13,7 +13,10 @@ const (
 	alphabet   = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 )
 
-var ErrInvalidURL = errors.New("invalid URL")
+var (
+	ErrInvalidURL = errors.New("invalid URL")
+	ErrNotFound   = errors.New("link not found")
+)
 
 type Service struct {
 	mu    sync.RWMutex
@@ -54,6 +57,18 @@ func (s *Service) Create(rawURL string) (Link, error) {
 
 		return link, nil
 	}
+}
+
+func (s *Service) Get(slug string) (Link, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	link, exists := s.links[slug]
+	if !exists {
+		return Link{}, ErrNotFound
+	}
+
+	return link, nil
 }
 
 func isValidURL(rawURL string) bool {

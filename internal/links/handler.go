@@ -56,3 +56,19 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+func (h *Handler) Redirect(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+
+	link, err := h.service.Get(slug)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			http.Error(w, "link not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, link.URL, http.StatusFound)
+}

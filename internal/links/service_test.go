@@ -1,6 +1,9 @@
 package links
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestCreateLink(t *testing.T) {
 	service := NewService()
@@ -25,5 +28,32 @@ func TestCreateLinkRejectInvalidURL(t *testing.T) {
 	_, err := service.Create("not-a-url")
 	if err != ErrInvalidURL {
 		t.Fatalf("expected ErrInvalidURL, got %v", err)
+	}
+}
+
+func TestGetLink(t *testing.T) {
+	service := NewService()
+
+	created, err := service.Create("https://example.com/")
+	if err != nil {
+		t.Fatalf("create link: %v", err)
+	}
+
+	got, err := service.Get(created.Slug)
+	if err != nil {
+		t.Fatalf("get link: %v", err)
+	}
+
+	if got != created {
+		t.Fatalf("expected link %+v, got %+v", created, got)
+	}
+}
+
+func TestGetLinkNotFound(t *testing.T) {
+	service := NewService()
+
+	_, err := service.Get("doesnotexist")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }

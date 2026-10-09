@@ -21,6 +21,7 @@ func New() *http.ServeMux {
 	})
 
 	mux.HandleFunc("POST /links", linkHandler.Create)
+	mux.HandleFunc("GET /{slug}", linkHandler.Redirect)
 
 	return mux
 }
