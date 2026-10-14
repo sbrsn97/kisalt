@@ -87,3 +87,40 @@ func TestStoreGetBySlugNotFound(t *testing.T) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestStoreCreateReturnsSlugConflict(t *testing.T) {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+
+	db, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("create database pool: %v", err)
+	}
+	defer db.Close()
+
+	store := NewStore(db)
+
+	slug := "duplicate-test"
+
+	t.Cleanup(func() {
+		_, _ = db.Exec(
+			context.Background(),
+			"DELETE FROM links WHERE slug = $1",
+			slug,
+		)
+	})
+
+	_, err = store.Create(ctx, slug, "https://example.com/first")
+	if err != nil {
+		t.Fatalf("create first link: %v", err)
+	}
+
+	_, err = store.Create(ctx, slug, "https://example.com/second")
+	if !errors.Is(err, ErrSlugConflict) {
+		t.Fatalf("expected ErrSlugConflict, got %v", err)
+	}
+}

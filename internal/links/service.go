@@ -9,22 +9,27 @@ import (
 )
 
 const (
-	slugLength = 7
-	alphabet   = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	slugLength                = 7
+	maxSlugGenerationAttempts = 5
+	alphabet                  = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 )
 
 var (
-	ErrInvalidURL = errors.New("invalid URL")
-	ErrNotFound   = errors.New("link not found")
+	ErrInvalidURL              = errors.New("invalid URL")
+	ErrNotFound                = errors.New("link not found")
+	ErrSlugConflict            = errors.New("slug already exists")
+	ErrSlugGenerationExhausted = errors.New("could not generate unique slug")
 )
 
 type Service struct {
-	store *Store
+	store        *Store
+	generateSlug func(int) (string, error)
 }
 
 func NewService(store *Store) *Service {
 	return &Service{
-		store: store,
+		store:        store,
+		generateSlug: generateSlug,
 	}
 }
 
@@ -33,17 +38,25 @@ func (s *Service) Create(ctx context.Context, rawURL string) (Link, error) {
 		return Link{}, ErrInvalidURL
 	}
 
-	slug, err := generateSlug(slugLength)
-	if err != nil {
+	for range maxSlugGenerationAttempts {
+		slug, err := s.generateSlug(slugLength)
+		if err != nil {
+			return Link{}, err
+		}
+
+		link, err := s.store.Create(ctx, slug, rawURL)
+		if err == nil {
+			return link, nil
+		}
+
+		if errors.Is(err, ErrSlugConflict) {
+			continue
+		}
+
 		return Link{}, err
 	}
 
-	link, err := s.store.Create(ctx, slug, rawURL)
-	if err != nil {
-		return Link{}, err
-	}
-
-	return link, nil
+	return Link{}, ErrSlugGenerationExhausted
 }
 
 func (s *Service) Get(ctx context.Context, slug string) (Link, error) {

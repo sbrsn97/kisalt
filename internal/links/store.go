@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -40,6 +41,14 @@ func (s *Store) Create(ctx context.Context, slug, originalURL string) (Link, err
 	)
 
 	if err != nil {
+		var pgErr *pgconn.PgError
+
+		if errors.As(err, &pgErr) &&
+			pgErr.Code == "23505" &&
+			pgErr.ConstraintName == "links_slug_unique" {
+			return Link{}, ErrSlugConflict
+		}
+
 		return Link{}, err
 	}
 
