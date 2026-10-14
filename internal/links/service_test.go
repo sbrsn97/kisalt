@@ -2,6 +2,7 @@ package links
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 
