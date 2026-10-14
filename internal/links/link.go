@@ -1,6 +1,10 @@
 package links
 
+import "time"
+
 type Link struct {
-	Slug string
-	URL  string
+	ID          int64
+	Slug        string
+	OriginalURL string
+	CreatedAt   time.Time
 }

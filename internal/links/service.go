@@ -1,11 +1,11 @@
 package links
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"math/big"
 	"net/url"
-	"sync"
 )
 
 const (
@@ -19,56 +19,35 @@ var (
 )
 
 type Service struct {
-	mu    sync.RWMutex
-	links map[string]Link
+	store *Store
 }
 
-func NewService() *Service {
+func NewService(store *Store) *Service {
 	return &Service{
-		links: make(map[string]Link),
+		store: store,
 	}
 }
 
-func (s *Service) Create(rawURL string) (Link, error) {
+func (s *Service) Create(ctx context.Context, rawURL string) (Link, error) {
 	if !isValidURL(rawURL) {
 		return Link{}, ErrInvalidURL
 	}
 
-	for {
-		slug, err := generateSlug(slugLength)
-		if err != nil {
-			return Link{}, err
-		}
-
-		s.mu.Lock()
-
-		if _, exists := s.links[slug]; exists {
-			s.mu.Unlock()
-			continue
-		}
-
-		link := Link{
-			Slug: slug,
-			URL:  rawURL,
-		}
-
-		s.links[slug] = link
-		s.mu.Unlock()
-
-		return link, nil
+	slug, err := generateSlug(slugLength)
+	if err != nil {
+		return Link{}, err
 	}
-}
 
-func (s *Service) Get(slug string) (Link, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	link, exists := s.links[slug]
-	if !exists {
-		return Link{}, ErrNotFound
+	link, err := s.store.Create(ctx, slug, rawURL)
+	if err != nil {
+		return Link{}, err
 	}
 
 	return link, nil
+}
+
+func (s *Service) Get(ctx context.Context, slug string) (Link, error) {
+	return s.store.GetBySlug(ctx, slug)
 }
 
 func isValidURL(rawURL string) bool {

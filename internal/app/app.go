@@ -3,13 +3,16 @@ package app
 import (
 	"net/http"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/sbrsn97/kisalt/internal/links"
 )
 
-func New() *http.ServeMux {
+func New(db *pgxpool.Pool) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	linkService := links.NewService()
+	linkStore := links.NewStore(db)
+	linkService := links.NewService(linkStore)
 	linkHandler := links.NewHandler(linkService)
 
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {

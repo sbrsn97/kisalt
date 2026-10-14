@@ -33,7 +33,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	link, err := h.service.Create(req.URL)
+	link, err := h.service.Create(r.Context(), req.URL)
 	if err != nil {
 		if errors.Is(err, ErrInvalidURL) {
 			http.Error(w, "invalid URL", http.StatusBadRequest)
@@ -45,7 +45,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	resp := createLinkResponse{
 		Slug: link.Slug,
-		URL:  link.URL,
+		URL:  link.OriginalURL,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -60,7 +60,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Redirect(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 
-	link, err := h.service.Get(slug)
+	link, err := h.service.Get(r.Context(), slug)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			http.Error(w, "link not found", http.StatusNotFound)
@@ -70,5 +70,5 @@ func (h *Handler) Redirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, link.URL, http.StatusFound)
+	http.Redirect(w, r, link.OriginalURL, http.StatusFound)
 }

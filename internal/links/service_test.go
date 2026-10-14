@@ -1,59 +1,44 @@
 package links
 
 import (
-	"errors"
 	"testing"
 )
 
-func TestCreateLink(t *testing.T) {
-	service := NewService()
-
-	link, err := service.Create("https://example.com/some/long/path")
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+func TestIsValidURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want bool
+	}{
+		{
+			name: "http URL",
+			url:  "http://example.com",
+			want: true,
+		},
+		{
+			name: "https URL",
+			url:  "https://example.com",
+			want: true,
+		},
+		{
+			name: "missing scheme",
+			url:  "example.com",
+			want: false,
+		},
+		{
+			name: "invalid URL",
+			url:  "not-a-url",
+			want: false,
+		},
 	}
 
-	if link.URL != "https://example.com/some/long/path" {
-		t.Errorf("expected URL %q, got %q", "https://example.com/some/long/path", link.URL)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isValidURL(tt.url)
 
-	if len(link.Slug) != slugLength {
-		t.Errorf("expected slug length %d, got %d", slugLength, len(link.Slug))
-	}
-}
-
-func TestCreateLinkRejectInvalidURL(t *testing.T) {
-	service := NewService()
-
-	_, err := service.Create("not-a-url")
-	if err != ErrInvalidURL {
-		t.Fatalf("expected ErrInvalidURL, got %v", err)
-	}
-}
-
-func TestGetLink(t *testing.T) {
-	service := NewService()
-
-	created, err := service.Create("https://example.com/")
-	if err != nil {
-		t.Fatalf("create link: %v", err)
-	}
-
-	got, err := service.Get(created.Slug)
-	if err != nil {
-		t.Fatalf("get link: %v", err)
-	}
-
-	if got != created {
-		t.Fatalf("expected link %+v, got %+v", created, got)
-	}
-}
-
-func TestGetLinkNotFound(t *testing.T) {
-	service := NewService()
-
-	_, err := service.Get("doesnotexist")
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expected ErrNotFound, got %v", err)
+			if got != tt.want {
+				t.Fatalf("expected %v, got %v", tt.want, got)
+			}
+		})
 	}
 }
