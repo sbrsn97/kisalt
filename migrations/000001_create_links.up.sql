@@ -1,0 +1,8 @@
+CREATE TABLE links (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    slug VARCHAR(64) NOT NULL,
+    original_url TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT links_slug_unique UNIQUE (slug)
+);
