@@ -1,16 +1,25 @@
 package links
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 )
 
+const maxCreateLinkBodyBytes = 4 * 1024
+
 type Handler struct {
-	service *Service
+	service linkService
 }
 
-func NewHandler(service *Service) *Handler {
+type linkService interface {
+	Create(ctx context.Context, rawURL string) (Link, error)
+	Get(ctx context.Context, slug string) (Link, error)
+}
+
+func NewHandler(service linkService) *Handler {
 	return &Handler{
 		service: service,
 	}
@@ -26,10 +35,24 @@ type createLinkResponse struct {
 }
 
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxCreateLinkBodyBytes)
+
 	var req createLinkRequest
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request payload", http.StatusBadRequest)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		http.Error(
+			w,
+			"request body must contain a single JSON object",
+			http.StatusBadRequest,
+		)
 		return
 	}
 
@@ -39,11 +62,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid URL", http.StatusBadRequest)
 			return
 		}
+
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	resp := createLinkResponse{
+	response := createLinkResponse{
 		Slug: link.Slug,
 		URL:  link.OriginalURL,
 	}
@@ -52,7 +76,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Location", "/"+link.Slug)
 	w.WriteHeader(http.StatusCreated)
 
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		return
 	}
 }
