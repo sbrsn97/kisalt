@@ -22,11 +22,16 @@ var (
 )
 
 type Service struct {
-	store        *Store
+	store        linkStore
 	generateSlug func(int) (string, error)
 }
 
-func NewService(store *Store) *Service {
+type linkStore interface {
+	Create(ctx context.Context, slug, originalURL string) (Link, error)
+	GetBySlug(ctx context.Context, slug string) (Link, error)
+}
+
+func NewService(store linkStore) *Service {
 	return &Service{
 		store:        store,
 		generateSlug: generateSlug,

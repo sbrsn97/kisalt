@@ -3,11 +3,28 @@ package links
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+type fakeStore struct {
+	createFunc    func(ctx context.Context, slug, originalURL string) (Link, error)
+	getBySlugFunc func(ctx context.Context, slug string) (Link, error)
+}
+
+func (f *fakeStore) Create(
+	ctx context.Context,
+	slug string,
+	originalURL string,
+) (Link, error) {
+	return f.createFunc(ctx, slug, originalURL)
+}
+
+func (f *fakeStore) GetBySlug(
+	ctx context.Context,
+	slug string,
+) (Link, error) {
+	return f.getBySlugFunc(ctx, slug)
+}
 
 func TestIsValidURL(t *testing.T) {
 	tests := []struct {
@@ -49,53 +66,40 @@ func TestIsValidURL(t *testing.T) {
 }
 
 func TestCreateRetriesAfterSlugConflict(t *testing.T) {
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("DATABASE_URL is not set")
-	}
-
 	ctx := context.Background()
 
-	db, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatalf("create database pool: %v", err)
+	slugs := []string{
+		"conflict",
+		"success",
 	}
-	defer db.Close()
 
-	store := NewStore(db)
+	generated := 0
+	createCalls := 0
 
-	conflictingSlug := "conflict"
-	successfulSlug := "success"
+	store := &fakeStore{
+		createFunc: func(
+			ctx context.Context,
+			slug string,
+			originalURL string,
+		) (Link, error) {
+			createCalls++
 
-	t.Cleanup(func() {
-		_, _ = db.Exec(
-			context.Background(),
-			"DELETE FROM links WHERE slug = ANY($1)",
-			[]string{conflictingSlug, successfulSlug},
-		)
-	})
+			if slug == "conflict" {
+				return Link{}, ErrSlugConflict
+			}
 
-	_, err = store.Create(
-		ctx,
-		conflictingSlug,
-		"https://example.com/existing",
-	)
-	if err != nil {
-		t.Fatalf("seed conflicting link: %v", err)
+			return Link{
+				Slug:        slug,
+				OriginalURL: originalURL,
+			}, nil
+		},
 	}
 
 	service := NewService(store)
 
-	slugs := []string{
-		conflictingSlug,
-		successfulSlug,
-	}
-
-	call := 0
-
 	service.generateSlug = func(length int) (string, error) {
-		slug := slugs[call]
-		call++
+		slug := slugs[generated]
+		generated++
 		return slug, nil
 	}
 
@@ -107,67 +111,52 @@ func TestCreateRetriesAfterSlugConflict(t *testing.T) {
 		t.Fatalf("create link: %v", err)
 	}
 
-	if link.Slug != successfulSlug {
+	if link.Slug != "success" {
 		t.Fatalf(
 			"expected slug %q, got %q",
-			successfulSlug,
+			"success",
 			link.Slug,
 		)
 	}
 
-	if call != 2 {
+	if generated != 2 {
 		t.Fatalf(
 			"expected generator to be called 2 times, got %d",
-			call,
+			generated,
+		)
+	}
+
+	if createCalls != 2 {
+		t.Fatalf(
+			"expected store Create to be called 2 times, got %d",
+			createCalls,
 		)
 	}
 }
 
 func TestCreateStopsAfterSlugGenerationAttemptsExhausted(t *testing.T) {
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("DATABASE_URL is not set")
-	}
-
 	ctx := context.Background()
 
-	db, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatalf("create database pool: %v", err)
-	}
-	defer db.Close()
-
-	store := NewStore(db)
-
-	slug := "always-conflict"
-
-	t.Cleanup(func() {
-		_, _ = db.Exec(
-			context.Background(),
-			"DELETE FROM links WHERE slug = $1",
-			slug,
-		)
-	})
-
-	_, err = store.Create(
-		ctx,
-		slug,
-		"https://example.com/existing",
-	)
-	if err != nil {
-		t.Fatalf("seed conflicting link: %v", err)
+	store := &fakeStore{
+		createFunc: func(
+			ctx context.Context,
+			slug string,
+			originalURL string,
+		) (Link, error) {
+			return Link{}, ErrSlugConflict
+		},
 	}
 
 	service := NewService(store)
 
-	calls := 0
+	generatorCalls := 0
 
 	service.generateSlug = func(length int) (string, error) {
-		calls++
-		return slug, nil
+		generatorCalls++
+		return "conflict", nil
 	}
 
-	_, err = service.Create(
+	_, err := service.Create(
 		ctx,
 		"https://example.com/new",
 	)
@@ -179,11 +168,104 @@ func TestCreateStopsAfterSlugGenerationAttemptsExhausted(t *testing.T) {
 		)
 	}
 
-	if calls != maxSlugGenerationAttempts {
+	if generatorCalls != maxSlugGenerationAttempts {
 		t.Fatalf(
 			"expected %d attempts, got %d",
 			maxSlugGenerationAttempts,
-			calls,
+			generatorCalls,
+		)
+	}
+}
+
+func TestCreateDoesNotRetryNonConflictError(t *testing.T) {
+	ctx := context.Background()
+
+	storeErr := errors.New("database unavailable")
+
+	createCalls := 0
+
+	store := &fakeStore{
+		createFunc: func(
+			ctx context.Context,
+			slug string,
+			originalURL string,
+		) (Link, error) {
+			createCalls++
+			return Link{}, storeErr
+		},
+	}
+
+	service := NewService(store)
+
+	generatorCalls := 0
+
+	service.generateSlug = func(length int) (string, error) {
+		generatorCalls++
+		return "abcdefg", nil
+	}
+
+	_, err := service.Create(
+		ctx,
+		"https://example.com",
+	)
+
+	if !errors.Is(err, storeErr) {
+		t.Fatalf("expected store error, got %v", err)
+	}
+
+	if createCalls != 1 {
+		t.Fatalf(
+			"expected 1 store call, got %d",
+			createCalls,
+		)
+	}
+
+	if generatorCalls != 1 {
+		t.Fatalf(
+			"expected 1 generator call, got %d",
+			generatorCalls,
+		)
+	}
+}
+
+func TestGetReturnsLinkFromStore(t *testing.T) {
+	ctx := context.Background()
+
+	expected := Link{
+		ID:          42,
+		Slug:        "abc1234",
+		OriginalURL: "https://example.com",
+	}
+
+	store := &fakeStore{
+		getBySlugFunc: func(
+			ctx context.Context,
+			slug string,
+		) (Link, error) {
+			if slug != expected.Slug {
+				t.Fatalf(
+					"expected slug %q, got %q",
+					expected.Slug,
+					slug,
+				)
+			}
+
+			return expected, nil
+		},
+	}
+
+	service := NewService(store)
+
+	got, err := service.Get(ctx, expected.Slug)
+	if err != nil {
+		t.Fatalf("get link: %v", err)
+	}
+
+	if got != expected {
+		t.Fatalf(
+			"expected %+v, got %+v",
+			expected,
+			got,
 		)
 	}
 }
